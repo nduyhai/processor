@@ -17,21 +17,40 @@ import java.util.Objects;
 interface Processor extends Ordered {
     void process();
 
+    void rollback();
+
     void setNext(Processor processor);
+
+    void setPrevious(Processor processor);
 
 }
 
 abstract class AbstractProcessor implements Processor {
     protected Processor next;
+    protected Processor previous;
 
     @Override
     public void setNext(Processor processor) {
         this.next = processor;
     }
 
+
+    @Override
+    public void setPrevious(Processor processor) {
+        this.previous = processor;
+    }
+
     @Override
     public void process() {
-        this.doProcess();
+        try {
+            this.doProcess();
+        } catch (Exception e) {
+            this.rollback();
+            if (Objects.nonNull(previous)) {
+                this.previous.rollback();
+            }
+        }
+        // Successfully
         if (Objects.nonNull(next)) {
             this.next.process();
         }
@@ -50,9 +69,7 @@ public class ProcessorApplication {
 
     @Bean
     public CommandLineRunner runner(ProcessorChain processors) {
-        return args -> {
-            processors.process();
-        };
+        return args -> processors.process();
     }
 
 
@@ -70,6 +87,12 @@ class LoggingProcessor extends AbstractProcessor {
     public int getOrder() {
         return 1;
     }
+
+    @Override
+    public void rollback() {
+        log.info("{} is rollback", this.getClass().getSimpleName());
+
+    }
 }
 
 
@@ -85,6 +108,11 @@ class CleanupProcessor extends AbstractProcessor {
     public int getOrder() {
         return 2;
     }
+
+    @Override
+    public void rollback() {
+        log.info("{} is rollback", this.getClass().getSimpleName());
+    }
 }
 
 @Slf4j
@@ -98,6 +126,10 @@ class ProcessorChain {
         processors.sort(Comparator.comparingInt(Ordered::getOrder));
         for (int i = 0; i < processors.size() - 1; i++) {
             processors.get(i).setNext(processors.get(i + 1));
+        }
+
+        for (int i = 1; i < processors.size(); i++) {
+            processors.get(i).setPrevious(processors.get(i - 1));
         }
     }
 
